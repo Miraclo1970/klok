@@ -54,6 +54,13 @@
     width:32px;height:32px;border-radius:9px;font-size:1rem;line-height:1;cursor:pointer;
   }
   .weeknav b{color:var(--ink);font-variant-numeric:tabular-nums}
+  .headright{display:flex;align-items:center;gap:8px}
+  .gear{
+    background:var(--surface);border:1px solid var(--line);color:var(--ink-dim);
+    width:32px;height:32px;border-radius:9px;font-size:1.05rem;line-height:1;cursor:pointer;
+    display:grid;place-items:center;
+  }
+  .gear:active{color:var(--amber)}
 
   /* Big running clock */
   .now{
@@ -155,6 +162,35 @@
   .norm .nbar{height:6px;background:var(--bg);border:1px solid var(--line);border-radius:4px;overflow:hidden}
   .norm .nbar>i{display:block;height:100%;background:var(--amber);border-radius:4px;transition:width .4s}
   .norm .nbar>i.done{background:var(--run)}
+  /* Billable target (reuses .norm styles) */
+  .target{margin:2px 0 12px}
+  .target .nlabel{display:flex;justify-content:space-between;font-size:.82rem;color:var(--ink-dim);margin-bottom:5px}
+  .target .nlabel b{color:var(--ink);font-variant-numeric:tabular-nums}
+  .target .nlabel .rem{font-weight:600}
+  .target .nlabel .rem.under{color:var(--amber)}
+  .target .nlabel .rem.over{color:var(--run)}
+  .target .nbar{height:6px;background:var(--bg);border:1px solid var(--line);border-radius:4px;overflow:hidden}
+  .target .nbar>i{display:block;height:100%;background:var(--pause);border-radius:4px;transition:width .4s}
+  .target .nbar>i.done{background:var(--run)}
+  .target .tnote{font-size:.72rem;color:var(--ink-dim);margin-top:4px}
+  /* Toggle row */
+  .toggle-row{
+    display:flex;align-items:center;gap:12px;margin-top:10px;
+    background:var(--surface);border:1px solid var(--line);border-radius:12px;
+    padding:12px 14px;font-size:.9rem;color:var(--ink);cursor:pointer;
+  }
+  .toggle-row span:first-child{flex:1}
+  .toggle-row input{position:absolute;opacity:0;pointer-events:none}
+  .toggle-row .switch{
+    width:46px;height:28px;border-radius:16px;background:var(--line);position:relative;
+    flex:0 0 auto;transition:background .2s;
+  }
+  .toggle-row .switch::after{
+    content:"";position:absolute;top:3px;left:3px;width:22px;height:22px;border-radius:50%;
+    background:var(--ink);transition:transform .2s;
+  }
+  .toggle-row input:checked + .switch{background:var(--run-deep)}
+  .toggle-row input:checked + .switch::after{transform:translateX(18px)}
   .kindtotals{display:flex;flex-wrap:wrap;gap:8px;margin-top:14px}
   .kindtotals .chip{
     flex:1 1 28%;min-width:88px;background:var(--bg);border:1px solid var(--line);border-radius:12px;
@@ -247,6 +283,8 @@
 
   /* Settings row */
   .settings{display:flex;gap:10px;margin-top:8px;flex-wrap:wrap}
+  .settings.settings-col{flex-direction:column;flex-wrap:nowrap}
+  .settings.settings-col label{min-width:0}
   .settings label{
     flex:1;min-width:140px;background:var(--surface);border:1px solid var(--line);
     border-radius:12px;padding:10px 12px;font-size:.8rem;color:var(--ink-dim);
@@ -335,10 +373,13 @@
 <div class="wrap">
   <header>
     <h1>Klok<span>.</span></h1>
-    <div class="weeknav">
-      <button id="wk-prev">‹</button>
-      <b id="wk-label">—</b>
-      <button id="wk-next">›</button>
+    <div class="headright">
+      <div class="weeknav">
+        <button id="wk-prev">‹</button>
+        <b id="wk-label">—</b>
+        <button id="wk-next">›</button>
+      </div>
+      <button id="open-settings" class="gear" aria-label="Instellingen">⚙</button>
     </div>
   </header>
 
@@ -368,18 +409,6 @@
 
   <!-- WEEK VIEW -->
   <section class="view" id="v-week">
-    <div class="settings">
-      <label>Werkuren per week
-        <input type="number" id="set-weekhours" min="0" max="80" step="0.5" value="36">
-      </label>
-      <label>Onproductief-opslag
-        <input type="number" id="set-overhead" min="0" max="50" step="0.5" value="5"> <span style="font-size:.75rem">% erbij</span>
-      </label>
-      <label>Pauze deze week
-        <input type="text" id="set-pause" readonly value="0:00">
-      </label>
-    </div>
-
     <div class="sec-head">
       <h2>Verlof &amp; afwezigheid</h2>
       <button id="add-absence">+ Toevoegen</button>
@@ -387,10 +416,11 @@
     <div id="absence-list"></div>
 
     <div class="summary" id="week-summary">
-      <div class="totrow grand"><span class="k">Te declareren (incl. opslag)</span><span class="v" id="grand-billable">0:00</span></div>
+      <div class="totrow grand"><span class="k" id="grand-billable-label">Te declareren</span><span class="v" id="grand-billable">0:00</span></div>
       <div class="norm" id="norm-row"></div>
+      <div class="target" id="target-row" style="display:none"></div>
       <div class="totrow"><span class="k">Declarabel gewerkt</span><span class="v" id="grand-worked">0:00</span></div>
-      <div class="totrow"><span class="k">Opslag toegevoegd</span><span class="v" id="grand-overhead">0:00</span></div>
+      <div class="totrow" id="overhead-row"><span class="k">Opslag toegevoegd</span><span class="v" id="grand-overhead">0:00</span></div>
       <div class="totrow nb"><span class="k">Niet-declarabel (overleg + intern)</span><span class="v" id="grand-nonbill">0:00</span></div>
       <div class="totrow abs" id="abs-row" style="display:none"><span class="k">Afwezig (verlof/ziek/feestdag)</span><span class="v" id="grand-absence">0:00</span></div>
 
@@ -416,6 +446,36 @@
     </div>
     <div id="session-list"></div>
     <p class="hint">Tik op het soort-label van een sessie om het achteraf te wijzigen. Doorloopt: eigen → controle → correctie → overleg → intern.</p>
+  </section>
+
+  <!-- SETTINGS VIEW -->
+  <section class="view" id="v-settings">
+    <div class="sec-head">
+      <h2>Instellingen</h2>
+      <button id="close-settings">Klaar</button>
+    </div>
+    <div class="settings settings-col">
+      <label>Werkuren per week
+        <input type="number" id="set-weekhours" min="0" max="80" step="0.5" value="36">
+      </label>
+      <label>Billable-factor
+        <input type="number" id="set-factor" min="0" max="100" step="0.5" value="85"> <span style="font-size:.75rem">% van beschikbaar</span>
+      </label>
+      <label>Pauze deze week
+        <input type="text" id="set-pause" readonly value="0:00">
+      </label>
+      <label id="overhead-field" style="display:none">Onproductief-opslag
+        <input type="number" id="set-overhead" min="0" max="50" step="0.5" value="5"> <span style="font-size:.75rem">% erbij</span>
+      </label>
+    </div>
+
+    <label class="toggle-row">
+      <span>Test (Niet gebruiken)</span>
+      <input type="checkbox" id="set-overhead-toggle">
+      <span class="switch"></span>
+    </label>
+
+    <p class="hint">Werkuren per week bepaalt je norm (en een dag verlof = werkuren ÷ 5). De billable-factor stelt je weekdoel in als percentage van je beschikbare uren. De onproductief-opslag telt een vast percentage bij je declarabele uren; laat deze uit als je die correctie niet gebruikt.</p>
   </section>
 </div>
 
@@ -548,7 +608,7 @@
     return {projects:[
       {id:uid(),name:"Project A",limit:null},
       {id:uid(),name:"Project B",limit:null}
-    ],sessions:[],running:null,overhead:5,weekStart:mondayOf(now()),currentKind:"eigen",weekHours:36,absences:[]};
+    ],sessions:[],running:null,overhead:5,weekStart:mondayOf(now()),currentKind:"eigen",weekHours:36,absences:[],overheadEnabled:false,billableFactor:85};
   }
   function migrate(d){
     if(d.overhead==null)d.overhead=5;
@@ -556,6 +616,8 @@
     if(!Array.isArray(d.sessions))d.sessions=[];
     if(!d.currentKind)d.currentKind="eigen";
     if(d.weekHours==null)d.weekHours=36;
+    if(d.overheadEnabled==null)d.overheadEnabled=false;
+    if(d.billableFactor==null)d.billableFactor=85;
     if(!Array.isArray(d.absences))d.absences=[];
     d.sessions.forEach(s=>{ if(s.projId!=="__pause__" && !s.kind)s.kind="eigen"; });
     d.sessions.forEach(s=>{ if(!s.id)s.id=uid(); });
@@ -788,6 +850,7 @@
 
   // ---------- overhead distribution ----------
   function emptyKindMap(){const o={};KIND_ORDER.forEach(k=>o[k]=0);return o;}
+  function effOverhead(){ return db.overheadEnabled ? Math.max(0,db.overhead) : 0; } // percent
 
   // ---------- absence (leave/sick/holiday) ----------
   function hoursPerDay(){ return (db.weekHours||0)/5; } // a day = week norm / 5
@@ -809,7 +872,7 @@
   // ---------- per-day breakdown ----------
   function dayBreakdown(){
     // returns array of day objects that have any activity (sessions or absences)
-    const oh=Math.max(0,db.overhead)/100;
+    const oh=effOverhead()/100;
     const days=[];
     for(let i=0;i<7;i++){
       const dts=db.weekStart+i*864e5;
@@ -858,7 +921,7 @@
   }
   function weekTotals(){
     const byPK=workedByProjectKind();
-    const oh=Math.max(0,db.overhead)/100;
+    const oh=effOverhead()/100;
     const kindTotals=emptyKindMap();
     const rows=db.projects.map(p=>{
       const k=byPK[p.id]||emptyKindMap();
@@ -994,6 +1057,11 @@
     document.getElementById("grand-nonbill").textContent=hhmm(nonbillTotal);
     document.getElementById("set-pause").value=hhmm(pauseTotal());
 
+    // overhead on/off affects labels and rows
+    const ohOn=!!db.overheadEnabled;
+    document.getElementById("grand-billable-label").textContent = ohOn ? "Te declareren (incl. opslag)" : "Te declareren";
+    document.getElementById("overhead-row").style.display = ohOn ? "" : "none";
+
     // absence total
     const absMs=absenceTotalHours()*36e5;
     const absRow=document.getElementById("abs-row");
@@ -1035,6 +1103,26 @@
       }
       if(!goalMet)celebrated[wk]=false; // allow re-celebration if you dip back under and cross again
     }else{ nr.innerHTML=""; }
+
+    // billable target: factor% of available hours (norm minus leave), compared to declarabel gewerkt
+    const tr=document.getElementById("target-row");
+    const factor=Math.max(0,Math.min(100,db.billableFactor||0));
+    const availMs=Math.max(0,normMs-absMs);
+    if(normMs>0 && factor>0){
+      const targetMs=availMs*(factor/100);
+      const pctT=targetMs>0?Math.min(100,(nettoBillable/targetMs)*100):100;
+      const diffT=nettoBillable-targetMs;
+      const cls=diffT>=0?"over":"under";
+      const txt=diffT>=0?`✓ gehaald (+${hhmm(diffT)})`:`nog ${hhmm(-diffT)} te gaan`;
+      tr.style.display="";
+      tr.innerHTML=`
+        <div class="nlabel">
+          <span>Billable-target <b>${factor.toString().replace('.',',')}%</b> = <b>${hhmm(targetMs)}</b></span>
+          <span class="rem ${cls}">${txt}</span>
+        </div>
+        <div class="nbar"><i class="${diffT>=0?'done':''}" style="width:${pctT}%"></i></div>
+        <div class="tnote">declarabel gewerkt ${hhmm(nettoBillable)} van ${hhmm(targetMs)} nodig</div>`;
+    }else{ tr.style.display="none"; tr.innerHTML=""; }
 
     // kind total chips (all five)
     const kt=document.getElementById("kind-totals");
@@ -1096,9 +1184,10 @@
       d.projRows.forEach(r=>{
         if(r.billable>0){
           const parts=BILLABLE_KINDS.filter(k=>r.kinds[k]>0).map(k=>`${KINDS[k].short.toLowerCase()} ${hhmm(r.kinds[k])}`);
+          const ohStr=db.overheadEnabled?` · +opslag ${hhmm(r.overhead)}`:"";
           html+=`<div class="day-line">
             <div class="dl-name">${escapeHtml(r.name)}
-              <div class="dl-sub">${parts.join(" · ")} · +opslag ${hhmm(r.overhead)}</div>
+              <div class="dl-sub">${parts.join(" · ")}${ohStr}</div>
             </div>
             <span class="dl-val">${hhmm(r.total)}</span>
           </div>`;
@@ -1231,7 +1320,8 @@
       L.push(`${fmtDayLabel(d.dts).toUpperCase()} — ${hhmm(d.dayTotal)} declarabel`);
       d.projRows.filter(r=>r.billable>0).forEach(r=>{
         const parts=BILLABLE_KINDS.filter(k=>r.kinds[k]>0).map(k=>`${KINDS[k].label} ${hhmm(r.kinds[k])}`);
-        L.push(`  ${r.name}: ${hhmm(r.total)} u  (${parts.join(", ")} + opslag ${hhmm(r.overhead)})`);
+        const ohStr=db.overheadEnabled?` + opslag ${hhmm(r.overhead)}`:"";
+        L.push(`  ${r.name}: ${hhmm(r.total)} u  (${parts.join(", ")}${ohStr})`);
       });
       d.projRows.filter(r=>r.nonbill>0).forEach(r=>{
         const parts=NONBILL_KINDS.filter(k=>r.kinds[k]>0).map(k=>`${KINDS[k].label} ${hhmm(r.kinds[k])}`);
@@ -1246,8 +1336,12 @@
     L.push("════ WEEKTOTAAL ════");
     L.push(`Declarabel gewerkt: ${hhmm(nettoBillable)} u`);
     BILLABLE_KINDS.forEach(k=>{ if(kindTotals[k]>0)L.push(`  • ${KINDS[k].label}: ${hhmm(kindTotals[k])} u`); });
-    L.push(`Onproductief-opslag (${db.overhead}%): ${hhmm(overheadTotal)} u`);
-    L.push(`Totaal te declareren: ${hhmm(billable)} u`);
+    if(db.overheadEnabled){
+      L.push(`Onproductief-opslag (${db.overhead}%): ${hhmm(overheadTotal)} u`);
+      L.push(`Totaal te declareren: ${hhmm(billable)} u`);
+    }else{
+      L.push(`Totaal te declareren: ${hhmm(billable)} u`);
+    }
     const normMs=(db.weekHours||0)*36e5;
     const absMs=absenceTotalHours()*36e5;
     if(normMs>0){
@@ -1256,6 +1350,15 @@
       const rem=diff>=0?`+${hhmm(diff)} boven`:`nog ${hhmm(-diff)} te gaan`;
       if(absMs>0)L.push(`Norm: ${hhmm(normMs)} − verlof ${hhmm(absMs)} = ${hhmm(base)} u (${rem})`);
       else L.push(`Norm: ${hhmm(normMs)} u/week (${rem})`);
+    }
+    // billable target
+    const factor=Math.max(0,Math.min(100,db.billableFactor||0));
+    if(normMs>0 && factor>0){
+      const availMs=Math.max(0,normMs-absMs);
+      const targetMs=availMs*(factor/100);
+      const diffT=nettoBillable-targetMs;
+      const rem=diffT>=0?`gehaald (+${hhmm(diffT)})`:`nog ${hhmm(-diffT)} te gaan`;
+      L.push(`Billable-target (${factor.toString().replace('.',',')}% van ${hhmm(availMs)}): ${hhmm(targetMs)} u — ${rem}`);
     }
     if(nonbillTotal>0){
       L.push("");
@@ -1510,6 +1613,16 @@
   document.getElementById("set-weekhours").addEventListener("input",e=>{
     let v=parseFloat(e.target.value);db.weekHours=isNaN(v)?0:v;renderWeek();save();
   });
+  document.getElementById("set-factor").addEventListener("input",e=>{
+    let v=parseFloat(e.target.value);db.billableFactor=isNaN(v)?0:v;renderWeek();save();
+  });
+  function applyOverheadToggle(){
+    document.getElementById("overhead-field").style.display = db.overheadEnabled ? "" : "none";
+    document.getElementById("set-overhead-toggle").checked = !!db.overheadEnabled;
+  }
+  document.getElementById("set-overhead-toggle").addEventListener("change",e=>{
+    db.overheadEnabled=e.target.checked; applyOverheadToggle(); renderWeek(); save();
+  });
 
   document.getElementById("wk-prev").onclick=()=>{db.weekStart-=7*864e5;alertedFor={};render();};
   document.getElementById("wk-next").onclick=()=>{
@@ -1525,6 +1638,21 @@
     document.getElementById(b.getAttribute("data-view")).classList.add("on");
   });
 
+  function showSettings(){
+    document.querySelectorAll(".view").forEach(x=>x.classList.remove("on"));
+    document.getElementById("v-settings").classList.add("on");
+    renderWeek(); // refresh pause total etc.
+  }
+  function closeSettings(){
+    // return to the currently active tab (Timer or Week)
+    document.querySelectorAll(".view").forEach(x=>x.classList.remove("on"));
+    const activeTab=document.querySelector(".tabbar button.on");
+    const target=activeTab?activeTab.getAttribute("data-view"):"v-week";
+    document.getElementById(target).classList.add("on");
+  }
+  document.getElementById("open-settings").onclick=showSettings;
+  document.getElementById("close-settings").onclick=closeSettings;
+
   // auto week roll: if now is in a later week and nothing running, follow along on load
   (function autoWeek(){
     const mNow=mondayOf(now());
@@ -1534,6 +1662,8 @@
   // reflect saved settings into inputs
   document.getElementById("set-overhead").value=db.overhead;
   document.getElementById("set-weekhours").value=db.weekHours;
+  document.getElementById("set-factor").value=db.billableFactor;
+  applyOverheadToggle();
 
   render();
   setInterval(()=>{ if(db.running&&!db.running.paused)tickNow(); },1000);
@@ -1543,4 +1673,3 @@
 </script>
 </body>
 </html>
-   
