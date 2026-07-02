@@ -191,6 +191,19 @@
   }
   .toggle-row input:checked + .switch{background:var(--run-deep)}
   .toggle-row input:checked + .switch::after{transform:translateX(18px)}
+  .pwbox{
+    background:var(--surface);border:1px solid var(--line);border-radius:12px;
+    padding:12px 14px;margin-top:8px;
+  }
+  .pwbox label{display:block;font-size:.8rem;color:var(--ink-dim);margin-bottom:8px}
+  .pwrow{display:flex;gap:8px}
+  .pwrow input{
+    flex:1;min-height:var(--tap);background:var(--bg);border:1px solid var(--line);
+    border-radius:12px;color:var(--ink);font-size:1.05rem;padding:0 14px;outline:none;
+  }
+  .pwrow input:focus{border-color:var(--amber)}
+  .pwrow button{flex:0 0 auto;min-height:var(--tap);border:none;border-radius:12px;padding:0 16px;font-weight:600;cursor:pointer}
+  .pwerr{color:var(--red);font-size:.8rem;margin-top:8px;font-weight:600}
   .kindtotals{display:flex;flex-wrap:wrap;gap:8px;margin-top:14px}
   .kindtotals .chip{
     flex:1 1 28%;min-width:88px;background:var(--bg);border:1px solid var(--line);border-radius:12px;
@@ -475,7 +488,16 @@
       <span class="switch"></span>
     </label>
 
-    <p class="hint">Werkuren per week bepaalt je norm (en een dag verlof = werkuren ÷ 5). De billable-factor stelt je weekdoel in als percentage van je beschikbare uren. De onproductief-opslag telt een vast percentage bij je declarabele uren; laat deze uit als je die correctie niet gebruikt.</p>
+    <div class="pwbox" id="pw-box" style="display:none">
+      <label>Wachtwoord vereist om aan te zetten</label>
+      <div class="pwrow">
+        <input type="password" id="pw-input" placeholder="Wachtwoord" autocomplete="off" inputmode="text">
+        <button class="b-primary" id="pw-ok">Ontgrendel</button>
+      </div>
+      <div class="pwerr" id="pw-err" style="display:none">Onjuist wachtwoord</div>
+    </div>
+
+    <p class="hint">Werkuren per week bepaalt je norm (en een dag verlof = werkuren ÷ 5). De billable-factor stelt je weekdoel in als percentage van je beschikbare uren.</p>
   </section>
 </div>
 
@@ -579,6 +601,7 @@
 (function(){
   "use strict";
   const LS="klok_v1";
+  const OVERHEAD_PW="DaniFiera"; // drempel om de opslag-functie aan te zetten (geen echte beveiliging)
   const now=()=>Date.now();
 
   // work kinds
@@ -1619,10 +1642,42 @@
   function applyOverheadToggle(){
     document.getElementById("overhead-field").style.display = db.overheadEnabled ? "" : "none";
     document.getElementById("set-overhead-toggle").checked = !!db.overheadEnabled;
+    // keep password box hidden whenever the state is settled
+    document.getElementById("pw-box").style.display="none";
+    document.getElementById("pw-input").value="";
+    document.getElementById("pw-err").style.display="none";
+  }
+  function enableOverhead(){
+    db.overheadEnabled=true; applyOverheadToggle(); renderWeek(); save();
+  }
+  function disableOverhead(){
+    db.overheadEnabled=false; applyOverheadToggle(); renderWeek(); save();
   }
   document.getElementById("set-overhead-toggle").addEventListener("change",e=>{
-    db.overheadEnabled=e.target.checked; applyOverheadToggle(); renderWeek(); save();
+    if(e.target.checked){
+      if(db.overheadEnabled){ return; } // already on
+      // don't enable yet — ask for password first
+      e.target.checked=false;
+      const box=document.getElementById("pw-box");
+      box.style.display="";
+      document.getElementById("pw-err").style.display="none";
+      document.getElementById("pw-input").value="";
+      setTimeout(()=>document.getElementById("pw-input").focus(),80);
+    }else{
+      disableOverhead();
+    }
   });
+  function tryUnlock(){
+    const val=document.getElementById("pw-input").value;
+    if(val===OVERHEAD_PW){ enableOverhead(); toast("Ontgrendeld"); }
+    else{
+      document.getElementById("pw-err").style.display="";
+      document.getElementById("pw-input").value="";
+      document.getElementById("pw-input").focus();
+    }
+  }
+  document.getElementById("pw-ok").onclick=tryUnlock;
+  document.getElementById("pw-input").addEventListener("keydown",e=>{ if(e.key==="Enter")tryUnlock(); });
 
   document.getElementById("wk-prev").onclick=()=>{db.weekStart-=7*864e5;alertedFor={};render();};
   document.getElementById("wk-next").onclick=()=>{
