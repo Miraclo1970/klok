@@ -264,7 +264,7 @@
   }
   .day-head{display:flex;align-items:baseline;justify-content:space-between;margin-bottom:8px}
   .day-head .dname{font-weight:700;font-size:1.02rem;text-transform:capitalize}
-  .day-head .dtot{font-variant-numeric:tabular-nums;font-weight:700;color:var(--amber)}
+  .day-head .dtot{font-variant-numeric:tabular-nums;font-weight:700}
   .day-line{display:flex;justify-content:space-between;align-items:baseline;
     padding:7px 0;border-top:1px solid var(--line);font-size:.9rem}
   .day-line .dl-name{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -276,6 +276,8 @@
   .day-foot{display:flex;justify-content:space-between;font-size:.76rem;color:var(--ink-dim);
     border-top:1px dashed var(--line);margin-top:2px;padding:7px 0 4px}
   .day-foot span{font-variant-numeric:tabular-nums}
+  .day-foot .fdecl{color:var(--amber)}
+  .day-foot .ftot{font-weight:700;color:var(--ink);flex:0 0 auto;padding-left:10px}
 
   /* Absence list */
   .abs-item{
@@ -1071,7 +1073,8 @@
       const dayAbsHours=abs.reduce((a,x)=>a+(x.hours||0),0);
       if(projRows.length||abs.length){
         days.push({dts,projRows,dayBillable,dayNonbill,dayOverhead,
-                   dayTotal:dayBillable*(1+oh),abs,dayAbsHours});
+                   dayTotal:dayBillable*(1+oh),abs,dayAbsHours,
+                   dayGrand:dayBillable*(1+oh)+dayNonbill+dayAbsHours*36e5});
       }
     }
     return days;
@@ -1392,7 +1395,7 @@
       card.className="day-card";
       let html=`<div class="day-head">
         <span class="dname">${fmtDayLabel(d.dts)}</span>
-        <span class="dtot">${hhmm(d.dayTotal)}</span>
+        <span class="dtot">${hhmm(d.dayGrand)}</span>
       </div>`;
       // declarable projects (incl overhead)
       d.projRows.forEach(r=>{
@@ -1429,10 +1432,10 @@
       });
       // footer: split declarabel vs overige
       const footBits=[];
-      footBits.push(`declarabel ${hhmm(d.dayTotal)}`);
+      footBits.push(`<span class="fdecl">declarabel ${hhmm(d.dayTotal)}</span>`);
       if(d.dayNonbill>0)footBits.push(`niet-decl. ${hhmm(d.dayNonbill)}`);
       if(d.dayAbsHours>0)footBits.push(`afwezig ${hhmm(d.dayAbsHours*36e5)}`);
-      html+=`<div class="day-foot"><span>${footBits.join(" · ")}</span></div>`;
+      html+=`<div class="day-foot"><span>${footBits.join(" · ")}</span><span class="ftot">totaal ${hhmm(d.dayGrand)}</span></div>`;
       card.innerHTML=html;
       wrap.appendChild(card);
     });
@@ -1531,7 +1534,7 @@
     const days=dayBreakdown();
     days.forEach(d=>{
       L.push("");
-      L.push(`${fmtDayLabel(d.dts).toUpperCase()} — ${hhmm(d.dayTotal)} declarabel`);
+      L.push(`${fmtDayLabel(d.dts).toUpperCase()} — ${hhmm(d.dayGrand)} totaal (${hhmm(d.dayTotal)} declarabel)`);
       d.projRows.filter(r=>r.billable>0).forEach(r=>{
         const parts=BILLABLE_KINDS.filter(k=>r.kinds[k]>0).map(k=>`${KINDS[k].label} ${hhmm(r.kinds[k])}`);
         const ohStr=db.overheadEnabled?` + opslag ${hhmm(r.overhead)}`:"";
