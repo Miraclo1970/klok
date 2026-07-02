@@ -178,7 +178,7 @@
     padding:12px 14px;margin-bottom:8px;display:flex;align-items:center;gap:10px;
   }
   .sess.pausesess{opacity:.6}
-  .sess .sinfo{flex:1;min-width:0}
+  .sess .sinfo{flex:1;min-width:0;cursor:pointer}
   .sess .sname{font-weight:600;font-size:.95rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .sess .stime{font-size:.78rem;color:var(--ink-dim);font-variant-numeric:tabular-nums;margin-top:2px}
   .sess .sdur{font-variant-numeric:tabular-nums;font-weight:600;font-size:.95rem;flex:0 0 auto}
@@ -357,10 +357,13 @@
 
     <div class="sec-head">
       <h2>Projecten</h2>
-      <button id="add-proj">+ Project</button>
+      <div style="display:flex;gap:8px">
+        <button id="add-hours">+ Uren</button>
+        <button id="add-proj">+ Project</button>
+      </div>
     </div>
     <div id="proj-list"></div>
-    <p class="hint">Tik op ▶ om een project te starten. Start je een ander project, dan stopt de vorige teller automatisch. Pauze zet alle tellers even stil.</p>
+    <p class="hint">Tik op ▶ om een project te starten. Vergeten te klokken? Gebruik <b>+ Uren</b> om achteraf tijd op een dag te boeken.</p>
   </section>
 
   <!-- WEEK VIEW -->
@@ -472,6 +475,37 @@
   </div>
 </div>
 
+<!-- MANUAL HOURS SHEET -->
+<div class="sheet-bg" id="hours-bg">
+  <div class="sheet">
+    <h3 id="hours-title">Uren toevoegen</h3>
+    <div class="field">
+      <label>Project</label>
+      <select id="h-proj" class="selfield"></select>
+    </div>
+    <div class="field">
+      <label>Dag</label>
+      <select id="h-day" class="selfield"></select>
+    </div>
+    <div class="field">
+      <label>Soort</label>
+      <div class="kindseg" id="h-kind"></div>
+    </div>
+    <div class="field">
+      <label>Aantal uren</label>
+      <input type="number" id="h-hours" min="0" step="0.25" placeholder="bijv. 2,5" inputmode="decimal">
+      <div class="fieldnote">Je kunt kwartieren gebruiken, bijv. 1.25 = 1 uur 15 min.</div>
+    </div>
+    <div class="sheet-actions">
+      <button class="b-ghost" id="h-cancel">Annuleer</button>
+      <button class="b-primary" id="h-save">Opslaan</button>
+    </div>
+    <div class="sheet-actions" style="margin-top:10px">
+      <button class="b-danger" id="h-delete" style="display:none">Sessie verwijderen</button>
+    </div>
+  </div>
+</div>
+
 <div class="toast" id="toast"></div>
 
 <canvas id="confetti"></canvas>
@@ -524,6 +558,7 @@
     if(d.weekHours==null)d.weekHours=36;
     if(!Array.isArray(d.absences))d.absences=[];
     d.sessions.forEach(s=>{ if(s.projId!=="__pause__" && !s.kind)s.kind="eigen"; });
+    d.sessions.forEach(s=>{ if(!s.id)s.id=uid(); });
     // absences: give each a specific day (default to Monday of its week)
     d.absences.forEach(a=>{ if(a.date==null)a.date=(a.week||mondayOf(now())); });
     return d;
@@ -618,7 +653,7 @@
     if(kind)db.currentKind=kind;
     db.running={projId:pid,start:now(),paused:false,pauseStart:null,pauseAccum:0};
     // open a session immediately
-    db.sessions.push({projId:pid,kind:db.currentKind,start:db.running.start,end:null,_live:true});
+    db.sessions.push({id:uid(),projId:pid,kind:db.currentKind,start:db.running.start,end:null,_live:true});
     save();render();
   }
   function stopCurrent(){
@@ -636,11 +671,11 @@
       const live=db.sessions.find(s=>s._live);
       if(live){live.end=now();delete live._live;}
       db.running.paused=true;
-      db.sessions.push({projId:"__pause__",start:now(),end:null,_livePause:true});
+      db.sessions.push({id:uid(),projId:"__pause__",start:now(),end:null,_livePause:true});
     }else{
       closePause();
       // resume work session with the same kind
-      db.sessions.push({projId:db.running.projId,kind:db.currentKind,start:now(),end:null,_live:true});
+      db.sessions.push({id:uid(),projId:db.running.projId,kind:db.currentKind,start:now(),end:null,_live:true});
       db.running.paused=false;
     }
     save();render();
@@ -658,7 +693,7 @@
         // close current segment, open a new one with the new kind
         if(now()-live.start<1000){ live.kind=kind; } // just started: just relabel
         else { live.end=now(); delete live._live;
-               db.sessions.push({projId:db.running.projId,kind:kind,start:now(),end:null,_live:true}); }
+               db.sessions.push({id:uid(),projId:db.running.projId,kind:kind,start:now(),end:null,_live:true}); }
       }
     }
     save();render();
@@ -1150,16 +1185,18 @@
       const kind=s.kind||"eigen";
       const K=KINDS[kind];
       const running=s._live?" · loopt":"";
+      const manual=s._manual?" · handmatig":"";
       const row=document.createElement("div");
       row.className="sess";
       row.innerHTML=`
-        <div class="sinfo">
+        <div class="sinfo" data-edit-sess="${s.id}">
           <div class="sname">${p?escapeHtml(p.name):"(verwijderd)"}</div>
-          <div class="stime">${fmtClock(s.start)}–${s.end?fmtClock(s.end):"nu"}${running}</div>
+          <div class="stime">${fmtClock(s.start)}–${s.end?fmtClock(s.end):"nu"}${running}${manual} · ✏️</div>
         </div>
         <button class="kindbadge"><i style="background:${K.color}"></i>${K.short}</button>
         <div class="sdur">${hhmm(dur)}</div>`;
       row.querySelector(".kindbadge").onclick=()=>cycleSessionKind(s);
+      row.querySelector("[data-edit-sess]").onclick=()=>openHours(s);
       wrap.appendChild(row);
     });
   }
@@ -1354,8 +1391,106 @@
     toast(ABSENCE[absDraft.type].label+" toegevoegd");
   }
 
+  // ---------- manual hours / edit session sheet ----------
+  let hoursDraft={editId:null,projId:null,day:null,kind:"eigen",hours:""};
+  function openHours(editSession){
+    if(editSession){
+      // editing an existing session
+      const dur=(editSession.end||now())-editSession.start;
+      hoursDraft={
+        editId:editSession.id,
+        projId:editSession.projId,
+        day:dayStart(editSession.start),
+        kind:editSession.kind||"eigen",
+        hours:(+(dur/36e5).toFixed(2))
+      };
+      document.getElementById("hours-title").textContent="Sessie bewerken";
+      document.getElementById("h-hours").value=hoursDraft.hours;
+      document.getElementById("h-delete").style.display="block";
+    }else{
+      const today=dayStart(now());
+      const inWeek = today>=db.weekStart && today<weekEnd(db.weekStart);
+      hoursDraft={editId:null,
+        projId:(db.projects[0]&&db.projects[0].id)||null,
+        day: inWeek?today:db.weekStart,
+        kind:"eigen",hours:""};
+      document.getElementById("hours-title").textContent="Uren toevoegen";
+      document.getElementById("h-hours").value="";
+      document.getElementById("h-delete").style.display="none";
+    }
+    populateHoursPickers();
+    renderHoursKind();
+    document.getElementById("hours-bg").classList.add("open");
+  }
+  function closeHours(){document.getElementById("hours-bg").classList.remove("open");}
+  function populateHoursPickers(){
+    const ps=document.getElementById("h-proj");
+    ps.innerHTML="";
+    db.projects.forEach(p=>{
+      const o=document.createElement("option");
+      o.value=p.id;o.textContent=p.name;
+      if(p.id===hoursDraft.projId)o.selected=true;
+      ps.appendChild(o);
+    });
+    ps.onchange=()=>{hoursDraft.projId=ps.value;};
+    const ds=document.getElementById("h-day");
+    ds.innerHTML="";
+    for(let i=0;i<7;i++){
+      const dts=db.weekStart+i*864e5;
+      const o=document.createElement("option");
+      o.value=String(dts);o.textContent=fmtDayLabel(dts);
+      if(dts===hoursDraft.day)o.selected=true;
+      ds.appendChild(o);
+    }
+    ds.onchange=()=>{hoursDraft.day=parseInt(ds.value,10);};
+  }
+  function renderHoursKind(){
+    const kw=document.getElementById("h-kind");
+    kw.innerHTML="";
+    KIND_ORDER.forEach(k=>{
+      const b=document.createElement("button");
+      b.textContent=KINDS[k].short;
+      if(hoursDraft.kind===k){b.classList.add("on");b.style.background=KINDS[k].color;b.style.borderColor=KINDS[k].color;b.style.color="#08201a";}
+      b.onclick=()=>{hoursDraft.kind=k;renderHoursKind();};
+      kw.appendChild(b);
+    });
+  }
+  function saveHours(){
+    const raw=parseFloat(document.getElementById("h-hours").value);
+    if(isNaN(raw)||raw<=0){toast("Vul een aantal uren in");return;}
+    if(!hoursDraft.projId){toast("Kies een project");return;}
+    const ms=raw*36e5;
+    const start=hoursDraft.day+9*3600e3; // plaats om 09:00 op de gekozen dag
+    const end=start+ms;
+    if(hoursDraft.editId){
+      const s=db.sessions.find(x=>x.id===hoursDraft.editId);
+      if(s){
+        // if it's the live running session, stop it first
+        if(s._live){ delete s._live; if(db.running)db.running=null; }
+        s.projId=hoursDraft.projId; s.kind=hoursDraft.kind;
+        s.start=start; s.end=end; s._manual=true;
+      }
+      toast("Sessie bijgewerkt");
+    }else{
+      db.sessions.push({id:uid(),projId:hoursDraft.projId,kind:hoursDraft.kind,start,end,_manual:true});
+      toast("Uren toegevoegd");
+    }
+    closeHours();render();save();
+  }
+  function deleteSession(id){
+    const s=db.sessions.find(x=>x.id===id);
+    if(s&&s._live&&db.running)db.running=null;
+    db.sessions=db.sessions.filter(x=>x.id!==id);
+    save();render();
+  }
+
   // ---------- wire up ----------
   document.getElementById("add-proj").onclick=()=>openSheet(null);
+  document.getElementById("add-hours").onclick=()=>openHours(null);
+  document.getElementById("h-cancel").onclick=closeHours;
+  document.getElementById("h-save").onclick=saveHours;
+  document.getElementById("h-delete").onclick=()=>{ if(hoursDraft.editId){deleteSession(hoursDraft.editId);closeHours();} };
+  document.getElementById("hours-bg").onclick=e=>{if(e.target.id==="hours-bg")closeHours();};
   document.getElementById("f-cancel").onclick=closeSheet;
   document.getElementById("f-save").onclick=saveSheet;
   document.getElementById("f-delete").onclick=deleteProj;
