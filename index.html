@@ -140,6 +140,20 @@
     display:flex;align-items:center;gap:5px;
   }
   .edit .lim{color:var(--amber)}
+  .wk-remove{
+    flex:0 0 auto;background:none;border:none;color:var(--ink-dim);
+    width:30px;height:44px;font-size:1rem;cursor:pointer;opacity:.6;
+  }
+  .wk-remove:active{color:var(--red);opacity:1}
+  /* Quick-pick list */
+  #pick-list{margin-top:4px}
+  .pick-head{font-size:.78rem;text-transform:uppercase;letter-spacing:.06em;color:var(--ink-dim);margin:14px 4px 8px}
+  .pick-chips{display:flex;flex-wrap:wrap;gap:8px}
+  .pick-chip{
+    background:var(--surface);border:1px solid var(--line);color:var(--ink);
+    border-radius:20px;padding:9px 14px;font-size:.88rem;cursor:pointer;
+  }
+  .pick-chip:active{border-color:var(--amber);color:var(--amber)}
 
   /* Week summary */
   .summary{
@@ -204,6 +218,12 @@
   .pwrow input:focus{border-color:var(--amber)}
   .pwrow button{flex:0 0 auto;min-height:var(--tap);border:none;border-radius:12px;padding:0 16px;font-weight:600;cursor:pointer}
   .pwerr{color:var(--red);font-size:.8rem;margin-top:8px;font-weight:600}
+  .backup-box{display:flex;gap:10px;flex-wrap:wrap}
+  .backup-btn{
+    flex:1 1 45%;min-width:150px;min-height:var(--tap);border:1px solid var(--line);
+    background:var(--surface);color:var(--ink);border-radius:13px;font-size:.95rem;font-weight:600;cursor:pointer;
+  }
+  .backup-btn:active{border-color:var(--amber)}
   .kindtotals{display:flex;flex-wrap:wrap;gap:8px;margin-top:14px}
   .kindtotals .chip{
     flex:1 1 28%;min-width:88px;background:var(--bg);border:1px solid var(--line);border-radius:12px;
@@ -417,6 +437,7 @@
       </div>
     </div>
     <div id="proj-list"></div>
+    <div id="pick-list"></div>
     <p class="hint">Tik op ▶ om een project te starten. Vergeten te klokken? Gebruik <b>+ Uren</b> om achteraf tijd op een dag te boeken.</p>
   </section>
 
@@ -498,6 +519,16 @@
     </div>
 
     <p class="hint">Werkuren per week bepaalt je norm (en een dag verlof = werkuren ÷ 5). De billable-factor stelt je weekdoel in als percentage van je beschikbare uren.</p>
+
+    <div class="sec-head" style="margin-top:24px">
+      <h2>Back-up</h2>
+    </div>
+    <div class="backup-box">
+      <button class="backup-btn" id="btn-export">⬇︎ Exporteer back-up</button>
+      <button class="backup-btn" id="btn-import">⬆︎ Importeer back-up</button>
+      <input type="file" id="import-file" accept="application/json,.json" style="display:none">
+    </div>
+    <p class="hint">Exporteren bewaart al je gegevens (projecten, uren, verlof en instellingen) in één bestand — handig als back-up of om naar een ander toestel over te zetten. Importeren leest zo'n bestand weer in; je kiest dan of je je huidige gegevens vervangt of samenvoegt. Omdat alles alleen op dit toestel staat, is af en toe een export verstandig.</p>
   </section>
 </div>
 
@@ -628,10 +659,10 @@
   let db=load();
   function load(){
     try{const d=JSON.parse(localStorage.getItem(LS));if(d&&d.projects)return migrate(d);}catch(e){}
-    return {projects:[
-      {id:uid(),name:"Project A",limit:null},
-      {id:uid(),name:"Project B",limit:null}
-    ],sessions:[],running:null,overhead:5,weekStart:mondayOf(now()),currentKind:"eigen",weekHours:36,absences:[],overheadEnabled:false,billableFactor:85};
+    const pa={id:uid(),name:"Project A",limit:null};
+    const pb={id:uid(),name:"Project B",limit:null};
+    const ws=mondayOf(now());
+    return {projects:[pa,pb],sessions:[],running:null,overhead:5,weekStart:ws,currentKind:"eigen",weekHours:36,absences:[],overheadEnabled:false,billableFactor:85,activeWeeks:{[ws]:[pa.id,pb.id]}};
   }
   function migrate(d){
     if(d.overhead==null)d.overhead=5;
@@ -646,6 +677,11 @@
     d.sessions.forEach(s=>{ if(!s.id)s.id=uid(); });
     // absences: give each a specific day (default to Monday of its week)
     d.absences.forEach(a=>{ if(a.date==null)a.date=(a.week||mondayOf(now())); });
+    // per-week active projects; seed the current week with all existing projects so nothing disappears on upgrade
+    if(!d.activeWeeks || typeof d.activeWeeks!=="object" || Array.isArray(d.activeWeeks)){
+      d.activeWeeks={};
+      d.activeWeeks[d.weekStart]=d.projects.map(p=>p.id);
+    }
     return d;
   }
   function save(){localStorage.setItem(LS,JSON.stringify(db));}
@@ -732,10 +768,58 @@
     return workedByProject()[pid]||0;
   }
 
-  // ---------- running control ----------
+  // ---------- per-week active projects ----------
+  function activeListFor(ws){ return db.activeWeeks[ws] || (db.activeWeeks[ws]=[]); }
+  function projectsWithSessionsThisWeek(){
+    const set=new Set();
+    weekSessions().forEach(s=>{ if(s.projId!=="__pause__")set.add(s.projId); });
+    return set;
+  }
+  // projects shown on the timer this week: active list ∪ running project, in project order
+  function visibleProjects(){
+    const active=new Set(activeListFor(db.weekStart));
+    const runId=db.running?db.running.projId:null;
+    return db.projects.filter(p=>active.has(p.id)||p.id===runId);
+  }
+  function isInWeek(pid){ return activeListFor(db.weekStart).includes(pid); }
+  function addProjectToWeek(pid){
+    const list=activeListFor(db.weekStart);
+    if(!list.includes(pid))list.push(pid);
+    save();
+  }
+  function removeProjectFromWeek(pid){
+    const list=activeListFor(db.weekStart);
+    const i=list.indexOf(pid);
+    if(i>=0)list.splice(i,1);
+    save();
+  }
+  // projects to offer in the quick-pick: recently used (last N weeks) OR recently active, not already visible this week
+  function recentPickProjects(weeks){
+    const cutoff=db.weekStart-(weeks*7*864e5);
+    const upper=weekEnd(db.weekStart);
+    const used=new Set();
+    db.sessions.forEach(s=>{
+      if(s.projId==="__pause__")return;
+      if(s.start>=cutoff && s.start<upper)used.add(s.projId);
+    });
+    Object.keys(db.activeWeeks).forEach(w=>{
+      const wn=parseInt(w,10);
+      if(wn>=cutoff && wn<upper)(db.activeWeeks[w]||[]).forEach(id=>used.add(id));
+    });
+    const visible=new Set(visibleProjects().map(p=>p.id));
+    let list=db.projects.filter(p=>used.has(p.id)&&!visible.has(p.id));
+    // fallback: if nothing recent qualifies, offer any not-visible project so you can always add one
+    if(!list.length){
+      list=db.projects.filter(p=>!visible.has(p.id));
+    }
+    return list;
+  }
+
+
   function startProject(pid,kind){
     stopCurrent();
     if(kind)db.currentKind=kind;
+    addProjectToWeek(pid); // zorg dat het project deze week zichtbaar is
     db.running={projId:pid,start:now(),paused:false,pauseStart:null,pauseAccum:0};
     // open a session immediately
     db.sessions.push({id:uid(),projId:pid,kind:db.currentKind,start:db.running.start,end:null,_live:true});
@@ -814,6 +898,69 @@
     const t=document.getElementById("toast");
     t.textContent=msg;t.classList.add("show");
     clearTimeout(t._t);t._t=setTimeout(()=>t.classList.remove("show"),2200);
+  }
+
+  // ---------- backup: export / import ----------
+  function exportBackup(){
+    const data=JSON.stringify(db,null,2);
+    const blob=new Blob([data],{type:"application/json"});
+    const url=URL.createObjectURL(blob);
+    const a=document.createElement("a");
+    const d=new Date();
+    const stamp=`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
+    a.href=url; a.download=`klok-backup-${stamp}.json`;
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    setTimeout(()=>URL.revokeObjectURL(url),1000);
+    toast("Back-up geëxporteerd");
+  }
+  function handleImportFile(file){
+    const reader=new FileReader();
+    reader.onload=()=>{
+      let incoming;
+      try{ incoming=JSON.parse(reader.result); }
+      catch(e){ toast("Kan bestand niet lezen"); return; }
+      if(!incoming||!Array.isArray(incoming.projects)){ toast("Geen geldige back-up"); return; }
+      askImportMode(incoming);
+    };
+    reader.onerror=()=>toast("Kan bestand niet lezen");
+    reader.readAsText(file);
+  }
+  function askImportMode(incoming){
+    const t=document.getElementById("toast");
+    const np=(incoming.projects||[]).length, ns=(incoming.sessions||[]).length, na=(incoming.absences||[]).length;
+    t.innerHTML=`<div><b>Back-up importeren</b><br><span style="font-size:.82rem;color:var(--ink-dim)">${np} projecten · ${ns} sessies · ${na} verlofposten</span></div>
+      <div class="alert-actions">
+        <button class="b-primary" id="imp-replace">Vervangen</button>
+        <button class="b-ghost" id="imp-merge">Samenvoegen</button>
+      </div>
+      <div class="alert-actions" style="margin-top:8px">
+        <button class="b-ghost" id="imp-cancel">Annuleer</button>
+      </div>`;
+    t.classList.add("show");
+    document.getElementById("imp-replace").onclick=()=>{ doImport(incoming,"replace"); hideToast(); };
+    document.getElementById("imp-merge").onclick=()=>{ doImport(incoming,"merge"); hideToast(); };
+    document.getElementById("imp-cancel").onclick=hideToast;
+  }
+  function doImport(incoming,mode){
+    incoming=migrate(incoming);
+    if(mode==="replace"){
+      // stop any running timer to avoid dangling references
+      db=incoming; db.running=null;
+      db.sessions.forEach(s=>{ delete s._live; delete s._livePause; });
+      save();
+      toast("Gegevens vervangen");
+    }else{
+      // merge: add items whose id isn't already present
+      const projIds=new Set(db.projects.map(p=>p.id));
+      incoming.projects.forEach(p=>{ if(!projIds.has(p.id))db.projects.push(p); });
+      const sessIds=new Set(db.sessions.map(s=>s.id));
+      (incoming.sessions||[]).forEach(s=>{ if(s.id&&!sessIds.has(s.id)){ delete s._live; delete s._livePause; db.sessions.push(s); } });
+      const absIds=new Set(db.absences.map(a=>a.id));
+      (incoming.absences||[]).forEach(a=>{ if(a.id&&!absIds.has(a.id))db.absences.push(a); });
+      save();
+      toast("Gegevens samengevoegd");
+    }
+    render();
   }
 
   // ---------- weekend celebration ----------
@@ -1032,44 +1179,88 @@
   function renderProjects(){
     const wrap=document.getElementById("proj-list");
     const worked=workedByProject();
-    if(!db.projects.length){
-      wrap.innerHTML=`<div class="empty">Nog geen projecten.<br>Tik op “+ Project” om er een toe te voegen.</div>`;
-      return;
+    const vis=visibleProjects();
+    if(!vis.length){
+      wrap.innerHTML=`<div class="empty">Nog geen projecten deze week.<br>Kies er een uit de lijst hieronder of tik op “+ Project”.</div>`;
+    }else{
+      wrap.innerHTML="";
+      vis.forEach(p=>{
+        const running=db.running&&db.running.projId===p.id;
+        const w=worked[p.id]||0;
+        const hasTime=w>0;
+        const card=document.createElement("div");
+        card.className="proj-card"+(running?" running":"");
+        let sub=`${hhmm(w)} u deze week`;
+        let barHtml="";
+        if(p.limit){
+          const pct=Math.min(100,(w/(p.limit*36e5))*100);
+          const over=w>p.limit*36e5;
+          sub=`${hhmm(w)} / ${p.limit} u`+(over?` <span class="over">+${hhmm(w-p.limit*36e5)} over</span>`:"");
+          barHtml=`<div class="bar"><i class="${over?'full':''}" style="width:${over?100:pct}%"></i></div>`;
+        }
+        const editLabel = p.limit
+          ? `Limiet <span class="lim">${p.limit} u</span>`
+          : `Bewerk`;
+        card.innerHTML=`
+          <span class="dot"></span>
+          <div class="proj-meta">
+            <div class="name">${escapeHtml(p.name)}</div>
+            <div class="sub">${sub}</div>
+            ${barHtml}
+          </div>
+          <button class="wk-remove" data-wkremove="${p.id}" title="Uit deze week halen">✕</button>
+          <button class="edit" data-edit="${p.id}">${editLabel}</button>
+          <button class="start" data-start="${p.id}">${running?'⏸':'▶'}</button>`;
+        wrap.appendChild(card);
+      });
     }
-    wrap.innerHTML="";
-    db.projects.forEach(p=>{
-      const running=db.running&&db.running.projId===p.id;
-      const w=worked[p.id]||0;
-      const card=document.createElement("div");
-      card.className="proj-card"+(running?" running":"");
-      let sub=`${hhmm(w)} u deze week`;
-      let barHtml="";
-      if(p.limit){
-        const pct=Math.min(100,(w/(p.limit*36e5))*100);
-        const over=w>p.limit*36e5;
-        sub=`${hhmm(w)} / ${p.limit} u`+(over?` <span class="over">+${hhmm(w-p.limit*36e5)} over</span>`:"");
-        barHtml=`<div class="bar"><i class="${over?'full':''}" style="width:${over?100:pct}%"></i></div>`;
-      }
-      const editLabel = p.limit
-        ? `Limiet <span class="lim">${p.limit} u</span>`
-        : `Bewerk`;
-      card.innerHTML=`
-        <span class="dot"></span>
-        <div class="proj-meta">
-          <div class="name">${escapeHtml(p.name)}</div>
-          <div class="sub">${sub}</div>
-          ${barHtml}
-        </div>
-        <button class="edit" data-edit="${p.id}">${editLabel}</button>
-        <button class="start" data-start="${p.id}">${running?'⏸':'▶'}</button>`;
-      wrap.appendChild(card);
-    });
     wrap.querySelectorAll("[data-start]").forEach(b=>b.onclick=()=>{
       const id=b.getAttribute("data-start");
       if(db.running&&db.running.projId===id){ togglePause(); }
       else { startProject(id); toast("Gestart: "+ (db.projects.find(x=>x.id===id)||{}).name); }
     });
     wrap.querySelectorAll("[data-edit]").forEach(b=>b.onclick=()=>openSheet(b.getAttribute("data-edit")));
+    wrap.querySelectorAll("[data-wkremove]").forEach(b=>b.onclick=()=>tryRemoveFromWeek(b.getAttribute("data-wkremove")));
+
+    renderPickList();
+  }
+
+  function tryRemoveFromWeek(pid){
+    const p=db.projects.find(x=>x.id===pid);
+    if(!p)return;
+    if(db.running&&db.running.projId===pid){ toast("Stop eerst de lopende timer"); return; }
+    const w=workedByProject()[pid]||0;
+    if(w>0){
+      // has clocked time this week — confirm, since removing hides it from the timer list
+      const t=document.getElementById("toast");
+      t.innerHTML=`<div><b>${escapeHtml(p.name)}</b> heeft ${hhmm(w)} u deze week.<br><span style="font-size:.82rem;color:var(--ink-dim)">Uit de week halen laat de uren wél in de weekstaat staan.</span></div>
+        <div class="alert-actions">
+          <button class="b-primary" id="wr-yes">Toch weghalen</button>
+          <button class="b-ghost" id="wr-no">Annuleer</button>
+        </div>`;
+      t.classList.add("show");
+      document.getElementById("wr-yes").onclick=()=>{ removeProjectFromWeek(pid); hideToast(); render(); };
+      document.getElementById("wr-no").onclick=hideToast;
+    }else{
+      removeProjectFromWeek(pid); render();
+    }
+  }
+
+  function renderPickList(){
+    const wrap=document.getElementById("pick-list");
+    if(!wrap)return;
+    const picks=recentPickProjects(4);
+    if(!picks.length){ wrap.innerHTML=""; return; }
+    let html=`<div class="pick-head">Snel toevoegen aan deze week</div><div class="pick-chips">`;
+    picks.forEach(p=>{
+      html+=`<button class="pick-chip" data-pick="${p.id}">+ ${escapeHtml(p.name)}</button>`;
+    });
+    html+=`</div>`;
+    wrap.innerHTML=html;
+    wrap.querySelectorAll("[data-pick]").forEach(b=>b.onclick=()=>{
+      addProjectToWeek(b.getAttribute("data-pick"));
+      render();
+    });
   }
 
   function renderWeek(){
@@ -1435,7 +1626,9 @@
       p.name=name;p.limit=lim;
       if(alertedFor[editingId]&&(!lim||projRunningTotal(editingId)<lim*36e5))delete alertedFor[editingId];
     }else{
-      db.projects.push({id:uid(),name,limit:lim});
+      const nid=uid();
+      db.projects.push({id:nid,name,limit:lim});
+      addProjectToWeek(nid); // nieuw project meteen actief in de huidige week
     }
     closeSheet();render();
   }
@@ -1443,6 +1636,12 @@
     if(!editingId)return;
     if(db.running&&db.running.projId===editingId)stopCurrent();
     db.projects=db.projects.filter(x=>x.id!==editingId);
+    // ook uit alle week-actieve lijsten verwijderen
+    Object.keys(db.activeWeeks).forEach(w=>{
+      const list=db.activeWeeks[w];
+      const i=list.indexOf(editingId);
+      if(i>=0)list.splice(i,1);
+    });
     closeSheet();render();
   }
 
@@ -1602,6 +1801,10 @@
       db.sessions.push({id:uid(),projId:hoursDraft.projId,kind:hoursDraft.kind,start,end,_manual:true});
       toast("Uren toegevoegd");
     }
+    // zorg dat het project actief is in de week waar de uren op vallen
+    const wk=mondayOf(hoursDraft.day);
+    const list=(db.activeWeeks[wk]||(db.activeWeeks[wk]=[]));
+    if(!list.includes(hoursDraft.projId))list.push(hoursDraft.projId);
     closeHours();render();save();
   }
   function deleteSession(id){
@@ -1707,6 +1910,13 @@
   }
   document.getElementById("open-settings").onclick=showSettings;
   document.getElementById("close-settings").onclick=closeSettings;
+  document.getElementById("btn-export").onclick=exportBackup;
+  document.getElementById("btn-import").onclick=()=>document.getElementById("import-file").click();
+  document.getElementById("import-file").addEventListener("change",e=>{
+    const f=e.target.files&&e.target.files[0];
+    if(f)handleImportFile(f);
+    e.target.value=""; // allow re-selecting the same file later
+  });
 
   // auto week roll: if now is in a later week and nothing running, follow along on load
   (function autoWeek(){
