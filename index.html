@@ -258,6 +258,16 @@
   }
   .kindbadge i{width:8px;height:8px;border-radius:50%;display:inline-block}
 
+  /* Swipe-to-delete */
+  .swipe{position:relative;overflow:hidden;border-radius:14px;margin-bottom:8px}
+  .swipe .swipe-del{
+    position:absolute;top:0;right:0;bottom:0;width:84px;border:none;
+    background:var(--red);color:#2a0d07;font-weight:700;font-size:.9rem;cursor:pointer;
+  }
+  .swipe .swipe-row{position:relative;z-index:1;transition:transform .18s ease;background:var(--surface)}
+  .swipe .sess{margin-bottom:0}
+  .day-card .swipe{border-radius:0;margin-bottom:0}
+
   /* Per-day breakdown */
   .day-card{
     background:var(--surface);border:1px solid var(--line);border-radius:16px;
@@ -1412,12 +1422,15 @@
         if(r.billable>0){
           const parts=BILLABLE_KINDS.filter(k=>r.kinds[k]>0).map(k=>`${KINDS[k].short.toLowerCase()} ${hhmm(r.kinds[k])}`);
           const ohStr=db.overheadEnabled?` · +opslag ${hhmm(r.overhead)}`:"";
-          html+=`<div class="day-line">
+          html+=`<div class="swipe" data-del-proj="${r.id}" data-day="${d.dts}" data-cat="1">
+            <button class="swipe-del">Wis</button>
+            <div class="swipe-row day-line">
             <div class="dl-name">${escapeHtml(r.name)}
               <div class="dl-sub">${parts.join(" · ")}${ohStr}</div>
               ${r.notes.length?`<div class="dl-sub dl-note">💬 ${r.notes.map(escapeHtml).join(" · ")}</div>`:""}
             </div>
             <span class="dl-val">${hhmm(r.total)}</span>
+            </div>
           </div>`;
         }
       });
@@ -1425,21 +1438,27 @@
       d.projRows.forEach(r=>{
         if(r.nonbill>0){
           const parts=NONBILL_KINDS.filter(k=>r.kinds[k]>0).map(k=>`${KINDS[k].short.toLowerCase()} ${hhmm(r.kinds[k])}`);
-          html+=`<div class="day-line nbl">
+          html+=`<div class="swipe" data-del-proj="${r.id}" data-day="${d.dts}" data-cat="0">
+            <button class="swipe-del">Wis</button>
+            <div class="swipe-row day-line nbl">
             <div class="dl-name">${escapeHtml(r.name)}
               <div class="dl-sub">niet-declarabel: ${parts.join(" · ")}</div>
               ${(r.billable<=0&&r.notes.length)?`<div class="dl-sub dl-note">💬 ${r.notes.map(escapeHtml).join(" · ")}</div>`:""}
             </div>
             <span class="dl-val">${hhmm(r.nonbill)}</span>
+            </div>
           </div>`;
         }
       });
       // absences
       d.abs.forEach(a=>{
         const A=ABSENCE[a.type]||{label:a.type,color:"var(--line)"};
-        html+=`<div class="day-line abs">
+        html+=`<div class="swipe" data-del-abs="${a.id}">
+          <button class="swipe-del">Wis</button>
+          <div class="swipe-row day-line abs">
           <div class="dl-name"><span class="adotm" style="background:${A.color}"></span>${A.label}</div>
           <span class="dl-val">${hhmm((a.hours||0)*36e5)}</span>
+          </div>
         </div>`;
       });
       // footer: split declarabel vs overige
@@ -1449,6 +1468,12 @@
       if(d.dayAbsHours>0)footBits.push(`afwezig ${hhmm(d.dayAbsHours*36e5)}`);
       html+=`<div class="day-foot"><span>${footBits.join(" · ")}</span><span class="ftot">totaal ${hhmm(d.dayGrand)}</span></div>`;
       card.innerHTML=html;
+      card.querySelectorAll(".swipe").forEach(w=>{
+        makeSwipeable(w,()=>{
+          if(w.dataset.delAbs)deleteAbsence(w.dataset.delAbs);
+          else deleteDaySessions(w.dataset.delProj,parseInt(w.dataset.day,10),w.dataset.cat==="1");
+        });
+      });
       wrap.appendChild(card);
     });
   }
@@ -1487,6 +1512,62 @@
     save();renderWeek();
   }
 
+  // ---------- swipe to delete ----------
+  function closeAllSwipes(except){
+    document.querySelectorAll(".swipe.open").forEach(w=>{ if(w!==except&&w._close)w._close(); });
+  }
+  function makeSwipeable(wrap,onDelete){
+    const row=wrap.querySelector(".swipe-row");
+    const OPEN=-84;
+    let startX=0,startY=0,dx=0,dragging=false,horiz=false,swallow=false;
+    function setX(x){row.style.transform=x?`translateX(${x}px)`:"";}
+    wrap._close=()=>{wrap.classList.remove("open");setX(0);};
+    row.addEventListener("touchstart",e=>{
+      const t=e.touches[0];startX=t.clientX;startY=t.clientY;
+      dragging=true;horiz=false;dx=wrap.classList.contains("open")?OPEN:0;
+      closeAllSwipes(wrap);
+    },{passive:true});
+    row.addEventListener("touchmove",e=>{
+      if(!dragging)return;
+      const t=e.touches[0];
+      const mx=t.clientX-startX,my=t.clientY-startY;
+      if(!horiz){
+        if(Math.abs(mx)>12&&Math.abs(mx)>Math.abs(my)*1.2)horiz=true;
+        else if(Math.abs(my)>12){dragging=false;return;}
+        else return;
+      }
+      if(e.cancelable)e.preventDefault();
+      const base=wrap.classList.contains("open")?OPEN:0;
+      dx=Math.max(OPEN-16,Math.min(0,base+mx));
+      setX(dx);
+    },{passive:false});
+    row.addEventListener("touchend",()=>{
+      if(!dragging)return;
+      dragging=false;
+      if(!horiz)return;
+      swallow=true;setTimeout(()=>swallow=false,400);
+      if(dx<OPEN/2){wrap.classList.add("open");setX(OPEN);}
+      else wrap._close();
+    });
+    // after a swipe (or while open) a tap on the row closes instead of activating it
+    row.addEventListener("click",e=>{
+      if(swallow){e.stopPropagation();e.preventDefault();return;}
+      if(wrap.classList.contains("open")){e.stopPropagation();e.preventDefault();wrap._close();}
+    },true);
+    wrap.querySelector(".swipe-del").onclick=e=>{e.stopPropagation();wrap._close();onDelete();};
+  }
+  function sessionCatBillable(s){const k=KINDS[s.kind];return k?k.billable:true;}
+  function deleteDaySessions(pid,dts,billableCat){
+    const hit=s=>s.projId===pid&&clipToDay(s,dts)>0&&sessionCatBillable(s)===billableCat;
+    const n=db.sessions.filter(hit).length;
+    if(!n)return;
+    const p=db.projects.find(x=>x.id===pid);
+    if(!confirm(`${p?p.name:"Project"} — alle ${billableCat?"declarabele":"niet-declarabele"} uren van deze dag verwijderen? (${n} sessie${n===1?"":"s"})`))return;
+    db.sessions=db.sessions.filter(s=>!hit(s));
+    if(db.running&&!db.sessions.some(s=>s._live))db.running=null;
+    save();render();toast("Verwijderd");
+  }
+
   function renderSessions(){
     const wrap=document.getElementById("session-list");
     if(!wrap)return;
@@ -1505,19 +1586,23 @@
       const K=KINDS[kind];
       const running=s._live?" · loopt":"";
       const manual=s._manual?" · handmatig":"";
-      const row=document.createElement("div");
-      row.className="sess";
-      row.innerHTML=`
+      const item=document.createElement("div");
+      item.className="swipe";
+      item.innerHTML=`
+        <button class="swipe-del">Wis</button>
+        <div class="swipe-row sess">
         <div class="sinfo" data-edit-sess="${s.id}">
           <div class="sname">${p?escapeHtml(p.name):"(verwijderd)"}</div>
           <div class="stime">${fmtClock(s.start)}–${s.end?fmtClock(s.end):"nu"}${running}${manual} · ✏️</div>
           ${s.note?`<div class="snote">💬 ${escapeHtml(s.note)}</div>`:""}
         </div>
         <button class="kindbadge"><i style="background:${K.color}"></i>${K.short}</button>
-        <div class="sdur">${hhmm(dur)}</div>`;
-      row.querySelector(".kindbadge").onclick=()=>cycleSessionKind(s);
-      row.querySelector("[data-edit-sess]").onclick=()=>openHours(s);
-      wrap.appendChild(row);
+        <div class="sdur">${hhmm(dur)}</div>
+        </div>`;
+      item.querySelector(".kindbadge").onclick=()=>cycleSessionKind(s);
+      item.querySelector("[data-edit-sess]").onclick=()=>openHours(s);
+      makeSwipeable(item,()=>{ deleteSession(s.id); toast("Sessie verwijderd"); });
+      wrap.appendChild(item);
     });
   }
 
