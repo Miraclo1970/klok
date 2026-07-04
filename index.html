@@ -480,14 +480,14 @@
       </table>
 
       <button class="copybtn" id="btn-copy">Weekverantwoording kopiëren</button>
-      <p class="hint">De opslag komt bovenop je declarabele uren (eigen, controle, correctie). Overleg en interne uren tellen apart en niet mee in het te declareren totaal.</p>
+      <p class="hint" id="hint-decl">Overleg en interne uren tellen apart en niet mee in het te declareren totaal.</p>
     </div>
 
     <div class="sec-head" style="margin-top:24px">
       <h2>Verantwoording per dag</h2>
     </div>
     <div id="day-list"></div>
-    <p class="hint">Elke dag toont de projecten met declarabele uren inclusief opslag, plus eventueel overleg, intern en verlof. Zo neem je het dag voor dag over in je urensysteem.</p>
+    <p class="hint" id="hint-day">Elke dag toont de projecten met declarabele uren, plus eventueel overleg, intern en verlof. Zo neem je het dag voor dag over in je urensysteem.</p>
 
     <div class="sec-head" style="margin-top:24px">
       <h2>Sessies deze week</h2>
@@ -1293,10 +1293,16 @@
     document.getElementById("grand-nonbill").textContent=hhmm(nonbillTotal);
     document.getElementById("set-pause").value=hhmm(pauseTotal());
 
-    // overhead on/off affects labels and rows
-    const ohOn=!!db.overheadEnabled;
+    // opslag alleen tonen als er daadwerkelijk opslag is (aan én > 0)
+    const ohOn=!!db.overheadEnabled && overheadTotal>0;
     document.getElementById("grand-billable-label").textContent = ohOn ? "Te declareren (incl. opslag)" : "Te declareren";
     document.getElementById("overhead-row").style.display = ohOn ? "" : "none";
+    document.getElementById("hint-decl").textContent = ohOn
+      ? "De opslag komt bovenop je declarabele uren (eigen, controle, correctie). Overleg en interne uren tellen apart en niet mee in het te declareren totaal."
+      : "Overleg en interne uren tellen apart en niet mee in het te declareren totaal.";
+    document.getElementById("hint-day").textContent = ohOn
+      ? "Elke dag toont de projecten met declarabele uren inclusief opslag, plus eventueel overleg, intern en verlof. Zo neem je het dag voor dag over in je urensysteem."
+      : "Elke dag toont de projecten met declarabele uren, plus eventueel overleg, intern en verlof. Zo neem je het dag voor dag over in je urensysteem.";
 
     // absence total
     const absMs=absenceTotalHours()*36e5;
@@ -1421,7 +1427,7 @@
       d.projRows.forEach(r=>{
         if(r.billable>0){
           const parts=BILLABLE_KINDS.filter(k=>r.kinds[k]>0).map(k=>`${KINDS[k].short.toLowerCase()} ${hhmm(r.kinds[k])}`);
-          const ohStr=db.overheadEnabled?` · +opslag ${hhmm(r.overhead)}`:"";
+          const ohStr=(db.overheadEnabled&&r.overhead>0)?` · +opslag ${hhmm(r.overhead)}`:"";
           html+=`<div class="swipe" data-del-proj="${r.id}" data-day="${d.dts}" data-cat="1">
             <button class="swipe-del">Wis</button>
             <div class="swipe-row day-line">
@@ -1635,7 +1641,7 @@
       L.push(`${fmtDayLabel(d.dts).toUpperCase()} — ${hhmm(d.dayGrand)} totaal (${hhmm(d.dayTotal)} declarabel)`);
       d.projRows.filter(r=>r.billable>0).forEach(r=>{
         const parts=BILLABLE_KINDS.filter(k=>r.kinds[k]>0).map(k=>`${KINDS[k].label} ${hhmm(r.kinds[k])}`);
-        const ohStr=db.overheadEnabled?` + opslag ${hhmm(r.overhead)}`:"";
+        const ohStr=(db.overheadEnabled&&r.overhead>0)?` + opslag ${hhmm(r.overhead)}`:"";
         L.push(`  ${r.name}: ${hhmm(r.total)} u  (${parts.join(", ")}${ohStr})`);
         if(r.notes.length)L.push(`    ↳ ${r.notes.join(" · ")}`);
       });
@@ -1653,12 +1659,10 @@
     L.push("════ WEEKTOTAAL ════");
     L.push(`Declarabel gewerkt: ${hhmm(nettoBillable)} u`);
     BILLABLE_KINDS.forEach(k=>{ if(kindTotals[k]>0)L.push(`  • ${KINDS[k].label}: ${hhmm(kindTotals[k])} u`); });
-    if(db.overheadEnabled){
+    if(db.overheadEnabled&&overheadTotal>0){
       L.push(`Onproductief-opslag (${db.overhead}%): ${hhmm(overheadTotal)} u`);
-      L.push(`Totaal te declareren: ${hhmm(billable)} u`);
-    }else{
-      L.push(`Totaal te declareren: ${hhmm(billable)} u`);
     }
+    L.push(`Totaal te declareren: ${hhmm(billable)} u`);
     const normMs=(db.weekHours||0)*36e5;
     const absMs=absenceTotalHours()*36e5;
     if(normMs>0){
